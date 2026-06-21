@@ -207,7 +207,7 @@ func (s *Store) UpdateProvider(id string, enabled *bool, weight *int) (*models.P
 	return nil, false
 }
 
-func (s *Store) AddProvider(name, logo string, models []string, weight int) models.Provider {
+func (s *Store) AddProvider(name, logo string, modelNames []string, weight int) models.Provider {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	provider := models.Provider{
@@ -215,7 +215,7 @@ func (s *Store) AddProvider(name, logo string, models []string, weight int) mode
 		Name:    name,
 		Logo:    logo,
 		Status:  "healthy",
-		Models:  models,
+		Models:  modelNames,
 		Latency: 800 + rand.Intn(500),
 		Enabled: true,
 		Weight:  weight,

@@ -3,7 +3,7 @@
 #
 # Before deploying:
 #   1. Push this repo to GitHub
-#   2. Replace YOUR_GITHUB_USER/project-gallery-2 with your repo
+#   2. Replace the repo URL below with your GitHub repo
 #   3. Run: doctl apps create --spec .do/app.yaml
 #      Or connect the repo in the DigitalOcean control panel
 
