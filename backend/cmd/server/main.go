@@ -24,7 +24,7 @@ func main() {
 
 	h := api.NewHandler()
 
-	r.Route("/api", func(r chi.Router) {
+	registerRoutes := func(r chi.Router) {
 		r.Get("/dashboard", h.GetDashboard)
 		r.Get("/models", h.GetModels)
 		r.Get("/api-keys", h.GetAPIKeys)
@@ -35,7 +35,11 @@ func main() {
 		r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, map[string]string{"status": "ok"})
 		})
-	})
+	}
+
+	// /api/* for local dev and direct access; /* for App Platform (strips /api prefix)
+	r.Route("/api", registerRoutes)
+	registerRoutes(r)
 
 	log.Printf("LLM Gateway Admin API listening on :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, r))
