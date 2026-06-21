@@ -49,10 +49,6 @@ services:
       - key: DATABASE_URL
         scope: RUN_TIME
         value: ${llm-gateway-db.DATABASE_URL}
-      - key: REDIS_URL
-        scope: RUN_TIME
-        value: ${llm-gateway-redis.DATABASE_URL}
-
 static_sites:
   - name: frontend
     github:
@@ -70,8 +66,4 @@ databases:
   - name: llm-gateway-db
     engine: PG
     version: "16"
-    production: false
-  - name: llm-gateway-redis
-    engine: REDIS
-    version: "7"
     production: false
