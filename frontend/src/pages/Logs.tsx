@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { Copy, Download, Filter, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -33,10 +34,32 @@ function JsonBlock({ data, label }: { data: object; label: string }) {
   )
 }
 
+function timeAgo(timestamp: string): string {
+  const now = Date.now()
+  const then = new Date(timestamp.replace(' ', 'T') + 'Z').getTime()
+  if (isNaN(then)) return 'unknown'
+  const diff = Math.floor((now - then) / 1000)
+  if (diff < 60) return `${diff}s ago`
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
+
 export function Logs() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [selected, setSelected] = useState<LogEntry | null>(null)
   const [tab, setTab] = useState<'request' | 'response'>('request')
+  const [modelFilter, setModelFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchParams] = useSearchParams()
+
+  useEffect(() => {
+    const q = searchParams.get('q')
+    if (q) {
+      setSearchQuery(q)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     api.getLogs().then((data) => {
@@ -45,6 +68,47 @@ export function Logs() {
     })
   }, [])
 
+  const models = useMemo(() => {
+    const set = new Set(logs.map((l) => l.model))
+    return ['all', ...Array.from(set)]
+  }, [logs])
+
+  const filteredLogs = useMemo(() => {
+    return logs.filter((log) => {
+      if (modelFilter !== 'all' && log.model !== modelFilter) return false
+      if (statusFilter === 'success' && (log.statusCode < 200 || log.statusCode >= 300)) return false
+      if (statusFilter === 'error' && log.statusCode < 400) return false
+      if (statusFilter === 'rate_limit' && log.statusCode !== 429) return false
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase()
+        return (
+          log.model.toLowerCase().includes(q) ||
+          log.provider.toLowerCase().includes(q) ||
+          log.application.toLowerCase().includes(q) ||
+          log.apiKey.toLowerCase().includes(q) ||
+          log.id.toLowerCase().includes(q)
+        )
+      }
+      return true
+    })
+  }, [logs, modelFilter, statusFilter, searchQuery])
+
+  const handleExport = () => {
+    const csv = [
+      'Timestamp,Model,Provider,TokensIn,TokensOut,Latency,StatusCode,Method,Path,Application,IP',
+      ...filteredLogs.map((l) =>
+        `${l.timestamp},${l.model},${l.provider},${l.tokensIn},${l.tokensOut},${l.latency},${l.statusCode},${l.method},${l.path},${l.application},${l.ip}`
+      ),
+    ].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `logs-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -52,7 +116,7 @@ export function Logs() {
           <h1 className="text-2xl font-bold">Logs</h1>
           <p className="text-sm text-text-secondary mt-1">Request and response logs</p>
         </div>
-        <Button variant="secondary" size="sm">
+        <Button variant="secondary" size="sm" onClick={handleExport}>
           <Download size={16} />
           Export
         </Button>
@@ -61,18 +125,33 @@ export function Logs() {
       <div className="flex flex-wrap items-center gap-3">
         <input
           type="text"
-          defaultValue="Jun 15 - Jun 21, 2026"
-          className="px-3 py-2 bg-bg-card border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
+          placeholder="Search logs..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="px-3 py-2 bg-bg-card border border-border rounded-lg text-sm focus:outline-none focus:border-accent w-48"
         />
-        <select className="px-3 py-2 bg-bg-card border border-border rounded-lg text-sm focus:outline-none focus:border-accent">
-          <option>All Models</option>
+        <select
+          value={modelFilter}
+          onChange={(e) => setModelFilter(e.target.value)}
+          className="px-3 py-2 bg-bg-card border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
+        >
+          {models.map((m) => (
+            <option key={m} value={m}>{m === 'all' ? 'All Models' : m}</option>
+          ))}
         </select>
-        <select className="px-3 py-2 bg-bg-card border border-border rounded-lg text-sm focus:outline-none focus:border-accent">
-          <option>All Status</option>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-2 bg-bg-card border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
+        >
+          <option value="all">All Status</option>
+          <option value="success">Success (2xx)</option>
+          <option value="rate_limit">Rate Limited (429)</option>
+          <option value="error">Error (4xx/5xx)</option>
         </select>
-        <Button size="sm">
+        <Button size="sm" onClick={() => { setModelFilter('all'); setStatusFilter('all'); setSearchQuery('') }}>
           <Filter size={14} />
-          More Filters
+          Clear Filters
         </Button>
       </div>
 
@@ -80,7 +159,7 @@ export function Logs() {
         <Card className="flex-1 flex flex-col overflow-hidden">
           <div className="px-5 py-4 border-b border-border">
             <h2 className="font-semibold">Recent API Calls</h2>
-            <p className="text-xs text-text-muted mt-0.5">{logs.length.toLocaleString()} requests</p>
+            <p className="text-xs text-text-muted mt-0.5">{filteredLogs.length.toLocaleString()} requests</p>
           </div>
           <div className="flex-1 overflow-y-auto">
             <table className="w-full text-sm">
@@ -94,7 +173,7 @@ export function Logs() {
                 </tr>
               </thead>
               <tbody>
-                {logs.map((log) => (
+                {filteredLogs.map((log) => (
                   <tr
                     key={log.id}
                     onClick={() => setSelected(log)}
@@ -107,7 +186,7 @@ export function Logs() {
                   >
                     <td className="px-4 py-3">
                       <p className="text-xs font-mono">{log.timestamp}</p>
-                      <p className="text-[10px] text-text-muted">14.32s ago</p>
+                      <p className="text-[10px] text-text-muted">{timeAgo(log.timestamp)}</p>
                     </td>
                     <td className="px-4 py-3">
                       <p className={clsx('text-sm', selected?.id === log.id && 'text-accent')}>

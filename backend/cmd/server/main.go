@@ -27,17 +27,29 @@ func main() {
 	registerRoutes := func(r chi.Router) {
 		r.Get("/dashboard", h.GetDashboard)
 		r.Get("/models", h.GetModels)
+
 		r.Get("/api-keys", h.GetAPIKeys)
+		r.Post("/api-keys", h.CreateAPIKey)
+		r.Delete("/api-keys/{id}", h.DeleteAPIKey)
+
 		r.Get("/providers", h.GetProviders)
+		r.Post("/providers", h.AddProvider)
+		r.Patch("/providers/{id}", h.UpdateProvider)
+
 		r.Get("/routes", h.GetRoutes)
+		r.Put("/routes", h.UpdateRoutes)
+
 		r.Get("/logs", h.GetLogs)
 		r.Get("/analytics", h.GetAnalytics)
+
+		r.Get("/settings", h.GetSettings)
+		r.Put("/settings", h.UpdateSettings)
+
 		r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, map[string]string{"status": "ok"})
 		})
 	}
 
-	// /api/* for local dev and direct access; /* for App Platform (strips /api prefix)
 	r.Route("/api", registerRoutes)
 	registerRoutes(r)
 
@@ -48,7 +60,7 @@ func main() {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)

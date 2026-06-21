@@ -1,10 +1,10 @@
 import { Copy, Eye, EyeOff, Plus, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
-import { CreateApiKeyModal } from '../components/ui/Modal'
+import { Modal } from '../components/ui/Modal'
 import { Toast } from '../components/ui/Toast'
 import type { ApiKey } from '../types'
 
@@ -19,19 +19,51 @@ export function ApiKeys() {
   const [showModal, setShowModal] = useState(false)
   const [revealed, setRevealed] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<{ type: 'success' | 'error'; title: string; message: string } | null>(null)
+  const nameRef = useRef<HTMLInputElement>(null)
+  const permsRef = useRef<HTMLSelectElement>(null)
+  const expiryRef = useRef<HTMLSelectElement>(null)
 
-  useEffect(() => {
+  const loadKeys = useCallback(() => {
     api.getApiKeys().then(setKeys)
   }, [])
 
+  useEffect(() => {
+    loadKeys()
+  }, [loadKeys])
+
   const handleCreate = useCallback(() => {
-    setShowModal(false)
-    setToast({
-      type: 'success',
-      title: 'API key created successfully',
-      message: 'Your new key has been created.',
-    })
-  }, [])
+    const name = nameRef.current?.value || 'New Key'
+    const permsRaw = permsRef.current?.value || 'Read, Write'
+    const permissions = permsRaw.toLowerCase().includes('write') ? ['read', 'write'] : ['read']
+    const expiryMap: Record<string, string> = {
+      '30 days': '2026-07-21',
+      '90 days': '2026-09-19',
+      '1 year': '2027-06-21',
+      'Never': '2099-12-31',
+    }
+    const expiresAt = expiryMap[expiryRef.current?.value || '90 days'] || '2026-09-19'
+
+    api.createApiKey(name, permissions, expiresAt)
+      .then(() => {
+        setShowModal(false)
+        setToast({ type: 'success', title: 'API key created successfully', message: 'Your new key has been created.' })
+        loadKeys()
+      })
+      .catch((err) => {
+        setToast({ type: 'error', title: 'Failed to create key', message: err.message })
+      })
+  }, [loadKeys])
+
+  const handleDelete = useCallback((id: string) => {
+    api.deleteApiKey(id)
+      .then(() => {
+        setToast({ type: 'success', title: 'API key deleted', message: 'The key has been revoked.' })
+        loadKeys()
+      })
+      .catch((err) => {
+        setToast({ type: 'error', title: 'Failed to delete key', message: err.message })
+      })
+  }, [loadKeys])
 
   const maskKey = (key: string) => {
     if (key.length <= 16) return key
@@ -115,7 +147,10 @@ export function ApiKeys() {
                     <Badge variant={statusVariant[apiKey.status]}>{apiKey.status}</Badge>
                   </td>
                   <td className="px-5 py-4 text-right">
-                    <button className="p-1.5 rounded hover:bg-error/10 text-text-muted hover:text-error cursor-pointer">
+                    <button
+                      onClick={() => handleDelete(apiKey.id)}
+                      className="p-1.5 rounded hover:bg-error/10 text-text-muted hover:text-error cursor-pointer"
+                    >
                       <Trash2 size={16} />
                     </button>
                   </td>
@@ -126,11 +161,53 @@ export function ApiKeys() {
         </div>
       </Card>
 
-      <CreateApiKeyModal
+      <Modal
         open={showModal}
         onClose={() => setShowModal(false)}
-        onCreate={handleCreate}
-      />
+        title="Create API Key"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreate}>Create Key</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm text-text-secondary mb-1.5">Key Name</label>
+            <input
+              ref={nameRef}
+              type="text"
+              defaultValue="Production Server Key"
+              className="w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-text-secondary mb-1.5">Permissions</label>
+            <select
+              ref={permsRef}
+              className="w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
+            >
+              <option>Read, Write</option>
+              <option>Read Only</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-text-secondary mb-1.5">Expires</label>
+            <select
+              ref={expiryRef}
+              className="w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
+            >
+              <option>30 days</option>
+              <option>90 days</option>
+              <option>1 year</option>
+              <option>Never</option>
+            </select>
+          </div>
+        </div>
+      </Modal>
 
       {toast && (
         <Toast

@@ -1,10 +1,12 @@
 import { Activity, Plus, Settings } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
+import { Modal } from '../components/ui/Modal'
 import { Toggle } from '../components/ui/Toggle'
+import { Toast } from '../components/ui/Toast'
 import type { Provider } from '../types'
 
 const statusVariant = {
@@ -27,15 +29,44 @@ const logoLabels: Record<string, string> = {
 
 export function Providers() {
   const [providers, setProviders] = useState<Provider[]>([])
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [showSettings, setShowSettings] = useState<Provider | null>(null)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; title: string; message: string } | null>(null)
+  const nameRef = useRef<HTMLInputElement>(null)
+  const modelRef = useRef<HTMLInputElement>(null)
+  const weightRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
+  const loadProviders = useCallback(() => {
     api.getProviders().then(setProviders)
   }, [])
 
-  const toggleProvider = (id: string) => {
-    setProviders((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p)),
-    )
+  useEffect(() => {
+    loadProviders()
+  }, [loadProviders])
+
+  const toggleProvider = (id: string, enabled: boolean) => {
+    api.updateProvider(id, enabled)
+      .then(() => {
+        loadProviders()
+      })
+      .catch((err) => {
+        setToast({ type: 'error', title: 'Update failed', message: err.message })
+      })
+  }
+
+  const handleAdd = () => {
+    const name = nameRef.current?.value || 'New Provider'
+    const model = modelRef.current?.value || 'gpt-4o'
+    const weight = parseInt(weightRef.current?.value || '10', 10)
+    api.addProvider(name, 'default', model.split(',').map((s) => s.trim()), weight)
+      .then(() => {
+        setShowAddModal(false)
+        setToast({ type: 'success', title: 'Provider added', message: `${name} has been added.` })
+        loadProviders()
+      })
+      .catch((err) => {
+        setToast({ type: 'error', title: 'Failed to add provider', message: err.message })
+      })
   }
 
   return (
@@ -47,7 +78,7 @@ export function Providers() {
             Manage LLM provider connections and health
           </p>
         </div>
-        <Button>
+        <Button onClick={() => setShowAddModal(true)}>
           <Plus size={16} />
           Add Provider
         </Button>
@@ -72,7 +103,7 @@ export function Providers() {
               </div>
               <Toggle
                 checked={provider.enabled}
-                onChange={() => toggleProvider(provider.id)}
+                onChange={(checked) => toggleProvider(provider.id, checked)}
               />
             </div>
 
@@ -104,13 +135,114 @@ export function Providers() {
               <Activity size={14} className="text-success" />
               <span className="text-xs text-success">Operational</span>
               <div className="flex-1" />
-              <button className="p-1.5 rounded hover:bg-bg-elevated text-text-muted cursor-pointer">
+              <button
+                onClick={() => setShowSettings(provider)}
+                className="p-1.5 rounded hover:bg-bg-elevated text-text-muted cursor-pointer"
+              >
                 <Settings size={16} />
               </button>
             </div>
           </Card>
         ))}
       </div>
+
+      <Modal
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        title="Add Provider"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowAddModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAdd}>Add Provider</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm text-text-secondary mb-1.5">Provider Name</label>
+            <input
+              ref={nameRef}
+              type="text"
+              defaultValue="Cohere"
+              className="w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-text-secondary mb-1.5">Models (comma-separated)</label>
+            <input
+              ref={modelRef}
+              type="text"
+              defaultValue="command-r,command-r-plus"
+              className="w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-text-secondary mb-1.5">Weight</label>
+            <input
+              ref={weightRef}
+              type="number"
+              defaultValue={10}
+              className="w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!showSettings}
+        onClose={() => setShowSettings(null)}
+        title={`Settings: ${showSettings?.name || ''}`}
+        footer={
+          <Button onClick={() => setShowSettings(null)}>Close</Button>
+        }
+      >
+        {showSettings && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Enabled</span>
+              <Toggle
+                checked={showSettings.enabled}
+                onChange={(checked) => {
+                  toggleProvider(showSettings.id, checked)
+                  setShowSettings({ ...showSettings, enabled: checked })
+                }}
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-text-secondary mb-1.5">Weight</label>
+              <input
+                type="number"
+                value={showSettings.weight}
+                onChange={(e) => setShowSettings({ ...showSettings, weight: Number(e.target.value) })}
+                className="w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-text-secondary mb-1.5">Status</label>
+              <select
+                value={showSettings.status}
+                onChange={(e) => setShowSettings({ ...showSettings, status: e.target.value as 'healthy' | 'degraded' | 'down' })}
+                className="w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
+              >
+                <option value="healthy">Healthy</option>
+                <option value="degraded">Degraded</option>
+                <option value="down">Down</option>
+              </select>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {toast && (
+        <Toast
+          type={toast.type}
+          title={toast.title}
+          message={toast.message}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   )
 }

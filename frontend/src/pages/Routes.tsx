@@ -1,10 +1,11 @@
 import { ArrowRight, Brain, Box, Save } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import { Toggle } from '../components/ui/Toggle'
+import { Toast } from '../components/ui/Toast'
 import type { Provider, RouteConfig } from '../types'
 
 function ProviderLogo({ logo }: { logo: string }) {
@@ -30,13 +31,24 @@ function ProviderLogo({ logo }: { logo: string }) {
 export function Routes() {
   const [config, setConfig] = useState<RouteConfig | null>(null)
   const [providers, setProviders] = useState<Provider[]>([])
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; title: string; message: string } | null>(null)
+  const [timeout, setTimeoutVal] = useState(30)
+  const [maxRetries, setMaxRetriesVal] = useState(2)
+  const [retryInterval, setRetryIntervalVal] = useState(500)
 
-  useEffect(() => {
+  const loadConfig = useCallback(() => {
     api.getRouteConfig().then((c) => {
       setConfig(c)
       setProviders(c.providers)
+      setTimeoutVal(c.timeout)
+      setMaxRetriesVal(c.maxRetries)
+      setRetryIntervalVal(c.retryInterval)
     })
   }, [])
+
+  useEffect(() => {
+    loadConfig()
+  }, [loadConfig])
 
   const totalWeight = providers.reduce((sum, p) => sum + (p.enabled ? p.weight : 0), 0)
 
@@ -50,6 +62,22 @@ export function Routes() {
     setProviders((prev) =>
       prev.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p)),
     )
+  }
+
+  const handleSave = () => {
+    api.updateRouteConfig({
+      timeout,
+      maxRetries,
+      retryInterval,
+      strategy: config?.strategy || 'Weighted Round Robin',
+      retryConditions: config?.retryConditions || [],
+    })
+      .then(() => {
+        setToast({ type: 'success', title: 'Configuration saved', message: 'Routing settings have been updated.' })
+      })
+      .catch((err) => {
+        setToast({ type: 'error', title: 'Failed to save', message: err.message })
+      })
   }
 
   if (!config) {
@@ -71,7 +99,7 @@ export function Routes() {
         </div>
         <div className="flex items-center gap-3">
           <Badge variant="success">Active</Badge>
-          <Button>
+          <Button onClick={handleSave}>
             <Save size={16} />
             Save
           </Button>
@@ -123,13 +151,14 @@ export function Routes() {
                       <Badge variant="success">Healthy</Badge>
                     </div>
                     <p className="text-xs text-text-muted mt-0.5">
-                      model: {provider.models[0]}
+                      Model: {provider.models[0]}
                     </p>
                   </div>
                   <Toggle
                     checked={provider.enabled}
                     onChange={() => toggleProvider(provider.id)}
                   />
+
                   <div className="w-32">
                     <div className="flex items-center justify-between text-xs mb-1">
                       <span className="text-text-muted">Weight</span>
@@ -182,7 +211,8 @@ export function Routes() {
               <div className="flex items-center gap-2">
                 <input
                   type="number"
-                  defaultValue={config.timeout}
+                  value={timeout}
+                  onChange={(e) => setTimeoutVal(Number(e.target.value))}
                   className="w-20 px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
                 />
                 <span className="text-sm text-text-muted">s</span>
@@ -197,7 +227,8 @@ export function Routes() {
                   <label className="text-xs text-text-muted">Max Retries</label>
                   <input
                     type="number"
-                    defaultValue={config.maxRetries}
+                    value={maxRetries}
+                    onChange={(e) => setMaxRetriesVal(Number(e.target.value))}
                     className="w-full mt-1 px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
                   />
                 </div>
@@ -206,7 +237,8 @@ export function Routes() {
                   <div className="flex items-center gap-1 mt-1">
                     <input
                       type="number"
-                      defaultValue={config.retryInterval}
+                      value={retryInterval}
+                      onChange={(e) => setRetryIntervalVal(Number(e.target.value))}
                       className="w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm focus:outline-none focus:border-accent"
                     />
                     <span className="text-xs text-text-muted">ms</span>
@@ -219,21 +251,27 @@ export function Routes() {
                     {cond}
                   </Badge>
                 ))}
-                <button className="text-xs text-accent hover:underline cursor-pointer">
-                  + Add
-                </button>
               </div>
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button variant="secondary" className="flex-1">
+              <Button variant="secondary" className="flex-1" onClick={loadConfig}>
                 Cancel
               </Button>
-              <Button className="flex-1">Save Configuration</Button>
+              <Button className="flex-1" onClick={handleSave}>Save Configuration</Button>
             </div>
           </Card>
         </div>
       </div>
+
+      {toast && (
+        <Toast
+          type={toast.type}
+          title={toast.title}
+          message={toast.message}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   )
 }
